@@ -36,12 +36,16 @@ export async function waitForNextBlock(provider, initialBlockNumber) {
   console.log(`   New block mined: ${currentBlockNumber}.`);
 }
 
-// Load bytecode from the specified file
-export function loadBytecode(name) {
+/**
+ * Load the contract's ABI and bytecode from the specified file
+ * @param {string} name 
+ * @returns {abi: string, bytecode: string}
+ */
+export function loadContract(name) {
   try {
-    const filePath = path.join(__dirname, '..', 'data', `${name}.bytecode`);
-    const bytecode = fs.readFileSync(filePath, 'utf8').trim();
-    return bytecode;
+    const filePath = path.join(__dirname, '..', 'data', `${name}.json`);
+    const abiAndBytecode = fs.readFileSync(filePath, 'utf8').trim();
+    return JSON.parse(abiAndBytecode);
   } catch (error) {
     console.error(`Error reading bytecode for ${name}:`, error.message);
     process.exit(1);

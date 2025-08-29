@@ -2,7 +2,6 @@ import { Wallet, JsonRpcProvider, parseEther, formatEther } from "ethers";
 import { loadOriginAccounts } from "./utils.js";
 import fs from "fs";
 import path from "path";
-import { exit } from "process";
 
 // --- Configuration ---
 const RPC_URL = "http://127.0.0.1:8545";
