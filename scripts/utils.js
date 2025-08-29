@@ -9,12 +9,15 @@ const __dirname = path.dirname(__filename);
 // Helper function to pause execution
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Function to load accounts from the specified JSON file
-export function loadAccounts() {
+/**
+ * Load origin accounts from the specified JSON file
+ * @returns {Array<{address: string, privateKey: string}>} An array of origin accounts
+ */
+export function loadOriginAccounts() {
   try {
     const filePath = path.join(__dirname, '..', 'keys', 'eth_accounts.json');
     const fileContent = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(fileContent);
+    return JSON.parse(fileContent).accounts;
   } catch (error) {
     console.error("Error reading or parsing the accounts file:", error.message);
     console.error("Please make sure 'keys/eth_accounts.json' exists and is a valid JSON file.");

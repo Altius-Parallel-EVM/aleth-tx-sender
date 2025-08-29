@@ -1,15 +1,15 @@
 import { JsonRpcProvider, Wallet, ContractFactory } from "ethers";
 // Assuming you've converted utils.js to ESM and added loadBytecode and waitForNextBlock
-import { loadAccounts, loadBytecode, waitForNextBlock } from './utils.js';
+import { loadOriginAccounts, loadBytecode, waitForNextBlock } from './utils.js';
 
 const RPC_URL = "http://localhost:8545";
 const DEPLOY_COUNT = 10;
 
 async function main() {
   const provider = new JsonRpcProvider(RPC_URL);
-  const accountsData = loadAccounts();
+  const accountsData = loadOriginAccounts();
 
-  const deployerAccount = accountsData.accounts[0];
+  const deployerAccount = accountsData[0];
   const wallet = new Wallet(deployerAccount.privateKey, provider);
   console.log(`Using deployer: ${wallet.address}`);
 
@@ -17,7 +17,7 @@ async function main() {
   const factory = new ContractFactory([], musdcBytecode, wallet);
 
   console.log(`\n--- Preparing to deploy ${DEPLOY_COUNT} MUSDC contracts concurrently ---`);
-  
+
   // Get the initial nonce once before the loop
   let currentNonce = await wallet.getNonce('pending');
   console.log(`Initial nonce: ${currentNonce}`);
@@ -28,7 +28,7 @@ async function main() {
     console.log(`Sending deployment tx #${i} with nonce ${currentNonce}...`);
     const deployPromise = factory.deploy({ nonce: currentNonce });
     deploymentPromises.push(deployPromise);
-    
+
     // Manually increment the nonce for the next transaction
     currentNonce++;
   }
@@ -52,18 +52,18 @@ async function main() {
 
   // 4. After the next block is mined, fetch all the receipts
   const receiptPromises = contracts.map(contract => {
-      return provider.getTransactionReceipt(contract.deploymentTransaction().hash);
+    return provider.getTransactionReceipt(contract.deploymentTransaction().hash);
   });
   const receipts = await Promise.all(receiptPromises);
 
   // 5. Log the results from the receipts
   console.log(`\n--- All transactions should now be confirmed. ---`);
   receipts.forEach((receipt, index) => {
-      if (receipt && receipt.contractAddress) {
-          console.log(`Contract #${index} deployed at address: ${receipt.contractAddress} (in block ${receipt.blockNumber})`);
-      } else {
-          console.log(`Could not get receipt for Contract #${index}. It may have failed or is still pending.`);
-      }
+    if (receipt && receipt.contractAddress) {
+      console.log(`Contract #${index} deployed at address: ${receipt.contractAddress} (in block ${receipt.blockNumber})`);
+    } else {
+      console.log(`Could not get receipt for Contract #${index}. It may have failed or is still pending.`);
+    }
   });
 
   console.log(`\n--- Successfully processed ${receipts.length} deployments! ---`);
