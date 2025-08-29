@@ -1,19 +1,5 @@
-const { JsonRpcProvider, parseEther, Wallet, formatEther } = require("ethers");
-const fs = require("fs");
-const path = require("path");
-
-// Function to load accounts from the specified JSON file
-function loadAccounts() {
-  try {
-    const filePath = path.join(__dirname, '..', 'keys', 'eth_accounts.json');
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(fileContent);
-  } catch (error) {
-    console.error("Error reading or parsing the accounts file:", error.message);
-    console.error("Please make sure 'keys/eth_accounts.json' exists and is a valid JSON file.");
-    process.exit(1);
-  }
-}
+import { JsonRpcProvider, parseEther, Wallet, formatEther } from "ethers";
+import { loadAccounts, waitForNextBlock, sleep } from './utils.js';
 
 const RPC_URL = "http://localhost:8545";
 const TRANSFER_AMOUNT = "0.01";
@@ -34,28 +20,23 @@ async function checkRecipientBalance(provider) {
 
 async function main() {
   const accountsData = loadAccounts();
-
   const provider = new JsonRpcProvider(RPC_URL);
   console.log("Connecting to local node...");
 
   const accountsToUse = accountsData.accounts.slice(0, 3);
 
-  console.log("\n--- Starting Transactions ---");
-
-  // Start monitoring RECIPIENT balance every second
-  console.log(`\n--- Starting RECIPIENT balance monitoring (every 1 second) ---`);
-  const balanceInterval = setInterval(async () => {
-    await checkRecipientBalance(provider);
-  }, 1000);
-
   // Initial balance check
   console.log("Initial RECIPIENT balance:");
   await checkRecipientBalance(provider);
 
+  console.log("\n--- Starting Transactions ---");
   for (const account of accountsToUse) {
     const wallet = new Wallet(account.privateKey, provider);
-
+    
     console.log(`\nProcessing account: ${account.address}`);
+
+    const initialBlock = await provider.getBlockNumber();
+
     const tx = {
       to: RECIPIENT,
       value: parseEther(TRANSFER_AMOUNT)
@@ -65,11 +46,17 @@ async function main() {
     const txResponse = await wallet.sendTransaction(tx);
     console.log(`Transaction sent. Hash: ${txResponse.hash}`);
 
-    await txResponse.wait();
-    console.log(`Transaction confirmed for ${account.address}.`);
+    await waitForNextBlock(provider, initialBlock);
+    
+    const receipt = await provider.getTransactionReceipt(txResponse.hash);
+    if (receipt && receipt.status === 1) {
+        console.log(`   Transaction confirmed successfully in block ${receipt.blockNumber}.`);
+    } else {
+        console.log(`   Transaction may have failed or is not yet confirmed.`);
+    }
   }
 
-  console.log("\n--- All transactions confirmed. Checking final balances... ---");
+  console.log("\n--- All transactions sent. Checking final balances... ---");
 
   for (const account of accountsToUse) {
     const address = account.address;
@@ -78,13 +65,13 @@ async function main() {
     console.log(`Final balance of ${address}: ${formattedBalance} ETH`);
   }
 
-  // Final RECIPIENT balance check
-  console.log("\nFinal RECIPIENT balance:");
-  await checkRecipientBalance(provider);
-
   // Stop the balance monitoring
   clearInterval(balanceInterval);
   console.log("\n--- RECIPIENT balance monitoring stopped ---");
+
+  // Final RECIPIENT balance check
+  console.log("\nFinal RECIPIENT balance:");
+  await checkRecipientBalance(provider);
 }
 
 main().catch((error) => {
