@@ -1,9 +1,7 @@
 import { Wallet, JsonRpcProvider, ContractFactory, formatEther } from "ethers";
 import fs from "fs";
 import path from "path";
-// Assuming you have utility functions that can load your contract's ABI/bytecode and origin accounts
 import { loadContract, loadOriginAccounts } from './utils.js'; 
-import { exit } from "process";
 
 // --- Configuration ---
 const RPC_URL = "http://127.0.0.1:8545";
