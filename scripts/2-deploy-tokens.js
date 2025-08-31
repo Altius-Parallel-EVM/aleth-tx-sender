@@ -6,7 +6,7 @@ import { loadContract, loadOriginAccounts } from './utils.js';
 // --- Configuration ---
 const RPC_URL = "http://127.0.0.1:8545";
 const DEPLOY_COUNT = 2000;
-const TOKENS_FILE_PATH = path.join("keys", "tokens1.json");
+const TOKENS_FILE_PATH = path.join("keys", "tokens.json");
 
 const GREEN = "\x1b[32m";
 const BLUE = "\x1b[34m";

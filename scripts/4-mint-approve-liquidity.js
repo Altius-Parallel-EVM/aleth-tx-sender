@@ -10,7 +10,7 @@ const WALLETS_FILE_PATH = path.join("keys", "wallets.json");
 const TOKENS_FILE_PATH = path.join("keys", "tokens.json");
 const UNISWAP_FILE_PATH = path.join("keys", "uniswap.json");
 const TX_COUNT = 1000;
-const CHUNK_SIZE = 200;
+const CHUNK_SIZE = 250;
 
 // --- Transaction Parameters ---
 const APPROVE_AMOUNT = parseUnits("1000000", 18);
