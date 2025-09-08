@@ -2,7 +2,6 @@ import { Wallet, JsonRpcProvider, Contract, parseUnits } from "ethers";
 import fs from "fs";
 import path from "path";
 import { loadContract } from './utils.js';
-import { exit } from "process";
 
 // --- Configuration ---
 const RPC_URL = "http://127.0.0.1:8545";
@@ -28,18 +27,18 @@ const RESET = "\x1b[0m";
  */
 async function executeBatch(description, txPromises) {
   if (txPromises.length === 0) return;
-  console.log(`  ${YELLOW}Executing: ${description} for ${txPromises.length} users...${RESET}`);
+  console.log(`  ${YELLOW}Executing: ${description} for ${txPromises.length} transactions...${RESET}`);
   const responses = await Promise.all(txPromises);
   const receiptPromises = responses.map(res => res.wait());
   await Promise.all(receiptPromises);
-  console.log(`  ${GREEN}Confirmed: ${description} for ${txPromises.length} users.${RESET}`);
+  console.log(`  ${GREEN}Confirmed: ${description} for ${txPromises.length} transactions.${RESET}`);
 }
 
 async function main() {
   const provider = new JsonRpcProvider(RPC_URL);
   console.log("Connecting to local node...");
 
-  // 1. Load all necessary data from files
+  // 1. Load data
   console.log("Loading wallets, tokens, and Uniswap contract addresses...");
   const userWalletsInfo = JSON.parse(fs.readFileSync(WALLETS_FILE_PATH, "utf8"));
   const tokenAddresses = JSON.parse(fs.readFileSync(TOKENS_FILE_PATH, "utf8"));
@@ -48,9 +47,36 @@ async function main() {
   const { abi: tokenAbi } = loadContract('musdc');
   const { abi: routerAbi } = loadContract('univ2-router');
 
-  // 2. Prepare wallets and fetch initial nonces
-  console.log(`Fetching initial nonces for all ${TX_COUNT} user wallets...`);
   const userWallets = userWalletsInfo.map(info => new Wallet(info.privateKey, provider));
+
+  // NEW: Full preparation for the conflict user (user[0])
+  console.log(`\n${BLUE}--- Preparing user[0] for ALL ${TX_COUNT} potential swaps ---${RESET}`);
+  const conflictUser = userWallets[0];
+
+  // Mint all 1000 necessary input tokens for user[0]
+  let prepNonceMint = await provider.getTransactionCount(conflictUser.address);
+  const mintPromises = [];
+  for (let m = 0; m < TX_COUNT; m++) {
+    const tokenInAddress = tokenAddresses[2 * m];
+    const tokenContract = new Contract(tokenInAddress, tokenAbi, conflictUser);
+    mintPromises.push(tokenContract.mint({ nonce: prepNonceMint++ }));
+  }
+  await executeBatch(`Minting all 1000 input tokens for user 0`, mintPromises);
+
+  // Approve all 1000 necessary input tokens for user[0]
+  let prepNonceApprove = await provider.getTransactionCount(conflictUser.address); // Re-fetch nonce after minting
+  const approvePromises = [];
+  for (let m = 0; m < TX_COUNT; m++) {
+    const tokenInAddress = tokenAddresses[2 * m];
+    const tokenContract = new Contract(tokenInAddress, tokenAbi, conflictUser);
+    approvePromises.push(tokenContract.approve(uniswapAddresses.router, APPROVE_AMOUNT, { nonce: prepNonceApprove++ }));
+  }
+  await executeBatch(`Approving all 1000 input tokens for user 0`, approvePromises);
+  console.log(`${GREEN}user[0] is now fully prepared.${RESET}`);
+
+
+  // 2. Prepare wallets and fetch nonces for the main liquidity task
+  console.log(`\nFetching initial nonces for all ${TX_COUNT} user wallets for liquidity provision...`);
   const nonceTrackers = new Map();
   const noncePromises = userWallets.map(async (wallet) => {
     const nonce = await provider.getTransactionCount(wallet.address);
@@ -59,15 +85,15 @@ async function main() {
   await Promise.all(noncePromises);
   console.log(`${GREEN}Initial nonces fetched.${RESET}`);
 
-  // 3. Process users in chunks, with strict sequential steps inside each chunk
+  // 3. Process users in chunks for liquidity provision (same as before)
+  console.log(`\n${BLUE}--- Starting Main Liquidity Provision for all users ---${RESET}`);
   for (let i = 0; i < TX_COUNT; i += CHUNK_SIZE) {
     const chunkEnd = Math.min(i + CHUNK_SIZE, TX_COUNT);
-    console.log(`\n${BLUE}--- Processing user chunk: ${i} to ${chunkEnd - 1} ---${RESET}`);
-
+    console.log(`\n${BLUE}--- Processing user chunk for liquidity: ${i} to ${chunkEnd - 1} ---${RESET}`);
     const currentChunkWallets = userWallets.slice(i, chunkEnd);
 
-    // STEP 1: Mint for Token A
-    let mintAPromises = [];
+    // BATCH 1: MINT A
+    const mintAPromises = [];
     for (const userWallet of currentChunkWallets) {
       const m = userWallets.indexOf(userWallet);
       const tokenAAddress = tokenAddresses[2 * m];
@@ -77,8 +103,8 @@ async function main() {
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
 
-    // STEP 2: Mint for Token B
-    let mintBPromises = [];
+    // BATCH 2: MINT B
+    const mintBPromises = [];
     for (const userWallet of currentChunkWallets) {
       const m = userWallets.indexOf(userWallet);
       const tokenBAddress = tokenAddresses[2 * m + 1];
@@ -88,8 +114,8 @@ async function main() {
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
 
-    // STEP 3: Approve for Token A
-    let approveAPromises = [];
+    // BATCH 3: APPROVE A
+    const approveAPromises = [];
     for (const userWallet of currentChunkWallets) {
       const m = userWallets.indexOf(userWallet);
       const tokenAAddress = tokenAddresses[2 * m];
@@ -99,8 +125,8 @@ async function main() {
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
 
-    // STEP 4: Approve for Token B
-    let approveBPromises = [];
+    // BATCH 4: APPROVE B
+    const approveBPromises = [];
     for (const userWallet of currentChunkWallets) {
       const m = userWallets.indexOf(userWallet);
       const tokenBAddress = tokenAddresses[2 * m + 1];
@@ -110,16 +136,16 @@ async function main() {
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
 
-    // STEP 5: Add Liquidity
-    let addLiquidityPromises = [];
-    const routerContract = new Contract(uniswapAddresses.router, routerAbi, provider);
+    // BATCH 5: ADD LIQUIDITY
+    const addLiquidityPromises = [];
     for (const userWallet of currentChunkWallets) {
       const m = userWallets.indexOf(userWallet);
       const tokenAAddress = tokenAddresses[2 * m];
       const tokenBAddress = tokenAddresses[2 * m + 1];
+      const routerContract = new Contract(uniswapAddresses.router, routerAbi, userWallet);
       let nonce = nonceTrackers.get(userWallet.address);
       addLiquidityPromises.push(
-        routerContract.connect(userWallet).addLiquidity(
+        routerContract.addLiquidity(
           tokenAAddress, tokenBAddress, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT, 0, 0, userWallet.address, DEADLINE,
           { nonce: nonce, gasLimit: 3000000 }
         )

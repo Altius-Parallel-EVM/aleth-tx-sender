@@ -11,6 +11,13 @@ const UNISWAP_FILE_PATH = path.join("keys", "uniswap.json");
 const TX_COUNT = 1000;
 const CHUNK_SIZE = 1000;
 
+// --- NEW: CONFLICT RATE PARAMETER ---
+// Set the desired conflict rate. 
+// 0.2 means user[0] will execute the first 20% of swaps (200 txs).
+// 1.0 means user[0] will execute all 1000 swaps.
+// 0.0 means no conflicts, original behavior.
+const CONFLICT_RATE = 0.2;
+
 // --- Transaction Parameters ---
 const SWAP_AMOUNT_IN = parseUnits("1", 18); // Swap 1 token (assuming 18 decimals)
 const AMOUNT_OUT_MIN = 0; // We don't care about slippage in this test
@@ -27,11 +34,11 @@ const RESET = "\x1b[0m";
  */
 async function executeBatch(description, txPromises) {
   if (txPromises.length === 0) return;
-  console.log(`  ${YELLOW}Executing: ${description} for ${txPromises.length} users...${RESET}`);
+  console.log(`  ${YELLOW}Executing: ${description} for ${txPromises.length} transactions...${RESET}`);
   const responses = await Promise.all(txPromises);
   const receiptPromises = responses.map(res => res.wait());
   await Promise.all(receiptPromises);
-  console.log(`  ${GREEN}Confirmed: ${description} for ${txPromises.length} users.${RESET}`);
+  console.log(`  ${GREEN}Confirmed: ${description} for ${txPromises.length} transactions.${RESET}`);
 }
 
 async function main() {
@@ -62,42 +69,53 @@ async function main() {
   console.log(`Starting Block Number: ${YELLOW}${startBlock}${RESET}`);
 
   // 3. Process users in chunks
+  const conflictTxCount = Math.floor(TX_COUNT * CONFLICT_RATE);
+  console.log(`Conflict rate set to ${CONFLICT_RATE * 100}%. User[0] will execute the first ${conflictTxCount} swaps.`);
+
   for (let i = 0; i < TX_COUNT; i += CHUNK_SIZE) {
     const chunkEnd = Math.min(i + CHUNK_SIZE, TX_COUNT);
-    console.log(`\n${BLUE}--- Processing user chunk: ${i} to ${chunkEnd - 1} ---${RESET}`);
+    console.log(`\n${BLUE}--- Processing transaction chunk: #${i} to #${chunkEnd - 1} ---${RESET}`);
 
-    const currentChunkWallets = userWallets.slice(i, chunkEnd);
     const swapPromises = [];
 
-    // Prepare all approve and swap transactions for the current chunk
-    for (const userWallet of currentChunkWallets) {
-      const m = userWallets.indexOf(userWallet);
+    // Prepare all swap transactions for the current chunk
+    for (let m = i; m < chunkEnd; m++) {
+      let swapperWallet;
+
+      // Conditional logic to assign the swapper based on conflict rate
+      if (m < conflictTxCount) {
+        // This is a conflict transaction, executed by user[0]
+        swapperWallet = userWallets[0];
+      } else {
+        // This is a normal transaction, executed by user[m]
+        swapperWallet = userWallets[m];
+      }
+
       const tokenInAddress = tokenAddresses[2 * m];
       const tokenOutAddress = tokenAddresses[2 * m + 1];
 
-      let nonce = nonceTrackers.get(userWallet.address);
+      // Get the correct nonce for the wallet that is actually sending the transaction
+      let nonce = nonceTrackers.get(swapperWallet.address);
 
-      // Prepare swap transaction
-      const routerContract = new Contract(uniswapAddresses.router, routerAbi, userWallet);
+      const routerContract = new Contract(uniswapAddresses.router, routerAbi, swapperWallet);
       const path = [tokenInAddress, tokenOutAddress];
-      const to = userWallet.address;
 
       swapPromises.push(
         routerContract.swapExactTokensForTokens(
           SWAP_AMOUNT_IN,
           AMOUNT_OUT_MIN,
           path,
-          to,
+          swapperWallet.address, // Send swapped tokens back to the swapper
           DEADLINE,
-          { nonce: nonce++ } // Use the next nonce
+          { nonce: nonce }
         )
       );
 
-      nonceTrackers.set(userWallet.address, nonce); // Update nonce tracker
+      // IMPORTANT: Increment the nonce for the wallet that just sent the tx
+      nonceTrackers.set(swapperWallet.address, nonce + 1);
     }
 
-    // Execute batches sequentially for the current chunk
-    await executeBatch("Executing Swaps", swapPromises);
+    await executeBatch(`Executing Swaps for transactions #${i} to #${chunkEnd - 1}`, swapPromises);
   }
 
   const endBlock = await provider.getBlockNumber();
