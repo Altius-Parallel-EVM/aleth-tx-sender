@@ -2,10 +2,6 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
 
-// Helper to get __dirname in ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // Helper function to pause execution
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -15,7 +11,9 @@ export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  */
 export function loadOriginAccounts() {
   try {
-    const filePath = path.join(__dirname, '..', 'keys', 'eth_accounts.json');
+    const filePath = path.join(path.dirname(
+      fileURLToPath(import.meta.url)
+    ), '..', 'keys', 'eth_accounts.json');
     const fileContent = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(fileContent).accounts;
   } catch (error) {
@@ -43,7 +41,9 @@ export async function waitForNextBlock(provider, initialBlockNumber) {
  */
 export function loadContract(name) {
   try {
-    const filePath = path.join(__dirname, '..', 'data', `${name}.json`);
+    const filePath = path.join(path.dirname(
+      fileURLToPath(import.meta.url)), '..', 'data', `${name}.json`
+    );
     const abiAndBytecode = fs.readFileSync(filePath, 'utf8').trim();
     return JSON.parse(abiAndBytecode);
   } catch (error) {

@@ -59,25 +59,7 @@ async function main() {
   const token0Address = tokenAddresses[0];
   const token0Contract = new Contract(token0Address, tokenAbi, provider);
 
-  // All users mint Token 0
-  let mintPromises = [];
-  for (const userWallet of userWallets) {
-    let nonce = await provider.getTransactionCount(userWallet.address);
-    mintPromises.push(token0Contract.connect(userWallet).mint({ nonce: nonce }));
-  }
-  await executeBatch(`All ${TX_COUNT} users minting Token 0`, mintPromises);
-
-  // All users approve Token 0 for the Router
-  let approvePromises = [];
-  for (const userWallet of userWallets) {
-    let nonce = await provider.getTransactionCount(userWallet.address);
-    approvePromises.push(token0Contract.connect(userWallet).approve(uniswapAddresses.router, APPROVE_AMOUNT, { nonce: nonce }));
-  }
-  await executeBatch(`All ${TX_COUNT} users approving Token 0 for Router`, approvePromises);
-  console.log(`${GREEN}All users are now prepared for Pool 0 swaps.${RESET}`);
-
-
-  // 3. Fetch initial nonces for the main liquidity task
+  // 3. Fetch nonces and mint & approve for Token 0
   console.log(`\nFetching initial nonces for all ${TX_COUNT} user wallets for their individual pools...`);
   const nonceTrackers = new Map();
   const noncePromises = userWallets.map(async (wallet) => {
@@ -86,6 +68,26 @@ async function main() {
   });
   await Promise.all(noncePromises);
   console.log(`${GREEN}Initial nonces fetched.${RESET}`);
+  
+  // All users mint Token 0
+  let mintPromises = [];
+  for (const userWallet of userWallets) {
+    let nonce = nonceTrackers.get(userWallet.address);
+    nonceTrackers.set(userWallet.address, nonce + 1);
+    mintPromises.push(token0Contract.connect(userWallet).mint({ nonce: nonce }));
+  }
+
+  // All users approve Token 0 for the Router
+  let approvePromises = [];
+  for (const userWallet of userWallets) {
+    let nonce = nonceTrackers.get(userWallet.address);
+    nonceTrackers.set(userWallet.address, nonce + 1);
+    approvePromises.push(token0Contract.connect(userWallet).approve(uniswapAddresses.router, APPROVE_AMOUNT, { nonce: nonce }));
+  }
+
+  await executeBatch(`All ${TX_COUNT} users minting Token 0`, mintPromises);
+  await executeBatch(`All ${TX_COUNT} users approving Token 0 for Router`, approvePromises);
+  console.log(`${GREEN}All users are now prepared for Pool 0 swaps.${RESET}`);
 
   // 4. Process users in chunks to add liquidity to their individual pools
   console.log(`\n${BLUE}--- Starting Main Liquidity Provision for all ${TX_COUNT} individual pools ---${RESET}`);
@@ -105,7 +107,6 @@ async function main() {
       mintAPromises.push(tokenAContract.mint({ nonce: nonce }));
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
-    await executeBatch("Minting for Token A", mintAPromises);
 
     // BATCH 2: MINT B
     const mintBPromises = [];
@@ -117,7 +118,6 @@ async function main() {
       mintBPromises.push(tokenBContract.mint({ nonce: nonce }));
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
-    await executeBatch("Minting for Token B", mintBPromises);
 
     // BATCH 3: APPROVE A
     const approveAPromises = [];
@@ -129,7 +129,6 @@ async function main() {
       approveAPromises.push(tokenAContract.approve(uniswapAddresses.router, APPROVE_AMOUNT, { nonce: nonce }));
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
-    await executeBatch("Approving Router for Token A", approveAPromises);
 
     // BATCH 4: APPROVE B
     const approveBPromises = [];
@@ -141,6 +140,9 @@ async function main() {
       approveBPromises.push(tokenBContract.approve(uniswapAddresses.router, APPROVE_AMOUNT, { nonce: nonce }));
       nonceTrackers.set(userWallet.address, nonce + 1);
     }
+    await executeBatch("Minting for Token A", mintAPromises);
+    await executeBatch("Minting for Token B", mintBPromises);
+    await executeBatch("Approving Router for Token A", approveAPromises);
     await executeBatch("Approving Router for Token B", approveBPromises);
 
     // BATCH 5: ADD LIQUIDITY

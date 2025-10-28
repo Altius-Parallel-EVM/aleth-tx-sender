@@ -14,12 +14,13 @@ const CHUNK_SIZE = 1000; // Use a reasonable chunk size for stability
 // --- HYPERPARAMETER: CONFLICT RATE ---
 // Defines the percentage of transactions that will all occur in the same pool (Pool 0)
 // 0.2 means the first 20% of users (user[0] to user[199]) will all trade in Pool 0.
-const CONFLICT_RATE = 0.2;
+const CONFLICT_RATE = 0;
 
 // --- Transaction Parameters ---
 const SWAP_AMOUNT_IN = parseUnits("1", 18); // Swap 1 token
 const AMOUNT_OUT_MIN = 0;
 const DEADLINE = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+const GAS_LIMIT_PER_SWAP = 200000;
 
 // --- Logging Colors ---
 const GREEN = "\x1b[32m";
@@ -102,7 +103,7 @@ async function main() {
           path,
           swapperWallet.address, // Send swapped tokens back to the swapper
           DEADLINE,
-          { nonce: nonce }
+          { nonce: nonce, gasLimit: GAS_LIMIT_PER_SWAP }
         )
       );
 
